@@ -12,6 +12,10 @@ import ru.quipy.core.EventSourcingService
 import ru.quipy.payments.api.PaymentAggregate
 import java.io.InterruptedIOException
 import java.net.SocketTimeoutException
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
 import java.time.Duration
 import java.util.*
 import java.util.concurrent.*
@@ -40,7 +44,8 @@ class PaymentExternalSystemAdapterImpl(
     private val rateLimiter = LeakingBucketRateLimiter(120L, Duration.ofSeconds(1), 120)
     private val semaphore = Semaphore(parallelRequests)
 
-    private val client = OkHttpClient.Builder().callTimeout(Duration.ofSeconds(3)).build()
+//    private val client = OkHttpClient.Builder().callTimeout(Duration.ofSeconds(3)).build()
+    private val client = HttpClient.newHttpClient();
 
     private val maxRetries = 1
     private val delay = 0L
@@ -91,17 +96,24 @@ class PaymentExternalSystemAdapterImpl(
             }
             arr.add(now())
             try {
-                val request = Request.Builder().run {
-                    url("http://localhost:1234/external/process?serviceName=${serviceName}&accountName=${accountName}&transactionId=$transactionId&paymentId=$paymentId&amount=$amount")
-                    post(emptyBody)
-                }.build()
+//                val request = Request.Builder().run {
+//                    url("http://localhost:1234/external/process?serviceName=${serviceName}&accountName=${accountName}&transactionId=$transactionId&paymentId=$paymentId&amount=$amount")
+//                    post(emptyBody)
+//                }.build()
+
+                val request = HttpRequest.newBuilder().uri(URI("http://localhost:1234/external/process?serviceName=${serviceName}&accountName=${accountName}&transactionId=$transactionId&paymentId=$paymentId&amount=$amount"))
+                    .version(HttpClient.Version.HTTP_2)
+                    .POST(HttpRequest.BodyPublishers.noBody())
+                    .build()
                 arr.add(now())
-                client.newCall(request).execute().use { response ->
+
+                client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenAcceptAsync { response ->
                     arr.add(now())
                     val body = try {
-                        mapper.readValue(response.body?.string(), ExternalSysResponse::class.java)
+                        mapper.readValue(response.body(), ExternalSysResponse::class.java)
                     } catch (e: Exception) {
-                        logger.error("[$accountName] [ERROR] Payment processed for txId: $transactionId, payment: $paymentId, result code: ${response.code}, reason: ${response.body?.string()}")
+                        logger.error("[$accountName] [ERROR] Payment processed for txId: $transactionId, payment: $paymentId, result code: ${response.statusCode()}, reason: ${response.body()}")
                         ExternalSysResponse(transactionId.toString(), paymentId.toString(), false, e.message)
                     }
                     logger.warn("[$accountName] Payment processed for txId: $transactionId, payment: $paymentId, succeeded: ${body.result}, message: ${body.message}")
