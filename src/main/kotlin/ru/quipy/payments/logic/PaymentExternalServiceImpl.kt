@@ -45,11 +45,11 @@ class PaymentExternalSystemAdapterImpl(
     private val semaphore = Semaphore(parallelRequests)
 
 //    private val client = OkHttpClient.Builder().callTimeout(Duration.ofSeconds(3)).build()
-    private val client = HttpClient.newHttpClient();
+    private val client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
     private val maxRetries = 1
     private val delay = 0L
-    private val requiredRequestMillis = 1500
+    private val requiredRequestMillis = 30000L
 
 
     private val paymentExecutor = ThreadPoolExecutor(
@@ -103,6 +103,7 @@ class PaymentExternalSystemAdapterImpl(
 
                 val request = HttpRequest.newBuilder().uri(URI("http://localhost:1234/external/process?serviceName=${serviceName}&accountName=${accountName}&transactionId=$transactionId&paymentId=$paymentId&amount=$amount"))
                     .version(HttpClient.Version.HTTP_2)
+                    .timeout(Duration.ofMillis(requiredRequestMillis))
                     .POST(HttpRequest.BodyPublishers.noBody())
                     .build()
                 arr.add(now())
