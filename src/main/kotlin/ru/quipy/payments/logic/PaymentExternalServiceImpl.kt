@@ -129,6 +129,13 @@ class PaymentExternalSystemAdapterImpl(
                     arr.add(now())
 
                     println("караул " + (arr[arr.size - 1] - arr[arr.size - 2]))
+                    } .exceptionally { _ ->
+                        paymentExecutor.submit {
+                            paymentESService.update(paymentId) {
+                                it.logProcessing(false, now(), transactionId)
+                            }
+                        }
+                        null
                 }
             } catch (e: Exception) {
                 when (e) {
