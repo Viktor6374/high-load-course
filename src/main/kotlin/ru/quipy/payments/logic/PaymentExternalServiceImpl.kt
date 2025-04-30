@@ -130,49 +130,44 @@ class PaymentExternalSystemAdapterImpl(
                     arr.add(now())
 
                     println("караул " + (arr[arr.size - 1] - arr[arr.size - 2]))
-                    } .exceptionally { _ ->
-                        paymentExecutor.submit {
-                            paymentESService.update(paymentId) {
-                                it.logProcessing(false, now(), transactionId)
+                    }
+                    .exceptionally { e ->
+                        when (e) {
+                            is SocketTimeoutException -> {
+                                logger.error(
+                                    "[$accountName] Payment timeout for txId: $transactionId, payment: $paymentId",
+                                    e
+                                )
+                                paymentESService.update(paymentId) {
+                                    it.logProcessing(false, now(), transactionId, reason = "Request timeout.")
+                                }
+                            }
+
+                            is InterruptedIOException -> {
+                                needRetry = tryCount++ < maxRetries
+
+                                logger.error(
+                                    "[$accountName] Payment failed for txId: $transactionId, payment: $paymentId",
+                                    e
+                                )
+
+                                paymentESService.update(paymentId) {
+                                    it.logProcessing(false, now(), transactionId, reason = e.message)
+                                }
+                            }
+
+                            else -> {
+                                logger.error(
+                                    "[$accountName] Payment failed for txId: $transactionId, payment: $paymentId",
+                                    e
+                                )
+
+                                paymentESService.update(paymentId) {
+                                    it.logProcessing(false, now(), transactionId, reason = e.message)
+                                }
                             }
                         }
                         null
-                }
-            } catch (e: Exception) {
-                when (e) {
-                    is SocketTimeoutException -> {
-                        logger.error(
-                            "[$accountName] Payment timeout for txId: $transactionId, payment: $paymentId",
-                            e
-                        )
-                        paymentESService.update(paymentId) {
-                            it.logProcessing(false, now(), transactionId, reason = "Request timeout.")
-                        }
-                    }
-
-                    is InterruptedIOException -> {
-                        needRetry = tryCount++ < maxRetries
-
-                        logger.error(
-                            "[$accountName] Payment failed for txId: $transactionId, payment: $paymentId",
-                            e
-                        )
-
-                        paymentESService.update(paymentId) {
-                            it.logProcessing(false, now(), transactionId, reason = e.message)
-                        }
-                    }
-
-                    else -> {
-                        logger.error(
-                            "[$accountName] Payment failed for txId: $transactionId, payment: $paymentId",
-                            e
-                        )
-
-                        paymentESService.update(paymentId) {
-                            it.logProcessing(false, now(), transactionId, reason = e.message)
-                        }
-                    }
                 }
             } finally {
                 semaphore.release()
